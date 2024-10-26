@@ -4,14 +4,14 @@ import 'location_statistics.dart';
 import 'excel_writer.dart';
 import 'utils.dart';
 import 'location.dart';
+import 'dart:convert';
 
 /// Main function that processes location data from a JSON file, calculates
-/// daily statistics for various activities, and writes them to an Excel file.
+/// daily statistics for various activities, and writes them to an Excel file and GeoJSON file.
 ///
 /// This application reads location records, calculates distances and activity
 /// times for each day, and then saves this information yearly into an Excel file.
-/// It uses the `LocationReader` for reading the JSON file, `LocationStatistics`
-/// to store daily statistics, and `ExcelWriter` to output the data to Excel format.
+/// It also exports location points as GeoJSON files for each year.
 void main(List<String> args) async {
   // Parse command-line arguments
   final inputFile = getArgumentValue(args, '-i') ?? 'Records.json';
@@ -40,15 +40,18 @@ void main(List<String> args) async {
       lastCoordinates; // Stores last known coordinates for distance calculation
   final Stopwatch stopwatch = Stopwatch()..start(); // Tracks execution time
 
+  // GeoJSON collection per year
+  List<Map<String, dynamic>> geoJsonPoints = [];
+
   await for (final Location location in reader.readLocations()) {
     final int year = location.timestamp.year;
     final String date =
         '${location.timestamp.year}-${location.timestamp.month.toString().padLeft(2, '0')}-${location.timestamp.day.toString().padLeft(2, '0')}';
 
-    // Checks for year change to separate data into yearly Excel sheets
+    // Checks for year change to separate data into yearly Excel sheets and GeoJSON files
     if (currentYear == null || year != currentYear) {
       if (currentYear != null) {
-        // Writes yearly statistics to Excel when year changes
+        // Writes yearly statistics to Excel and GeoJSON when year changes
         await writer.writeExcel(
           currentYear,
           statistics.dailyPointCounts,
@@ -62,10 +65,32 @@ void main(List<String> args) async {
           statistics.dailyVehicleTime,
           outputFolder, // Output directory for the Excel file
         );
+
+        await saveGeoJson(currentYear, geoJsonPoints, outputFolder);
+        geoJsonPoints.clear(); // Reset GeoJSON points for the new year
+
         statistics.clear(); // Resets statistics for the new year
       }
       currentYear = year;
     }
+
+    // Add the current location to the GeoJSON points collection
+    geoJsonPoints.add({
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [location.longitudeE7 / 1e7, location.latitudeE7 / 1e7],
+      },
+      "properties": {
+        "timestamp": location.timestamp.toIso8601String(),
+        "accuracy": location.accuracy,
+        "velocity": location.velocity,
+        "altitude": location.altitude,
+        "activity": location.activities
+            ?.map((activity) => activity.toString())
+            .toList(),
+      }
+    });
 
     // Calculate distance if there are previous coordinates and a timestamp
     if (lastCoordinates != null) {
@@ -104,6 +129,8 @@ void main(List<String> args) async {
       statistics.dailyVehicleTime,
       outputFolder, // Output directory for the Excel file
     );
+
+    await saveGeoJson(currentYear, geoJsonPoints, outputFolder);
   }
 
   stopwatch.stop();
@@ -121,4 +148,22 @@ String? getArgumentValue(List<String> args, String key) {
     return args[index + 1];
   }
   return null;
+}
+
+/// Saves location points as a GeoJSON file for the specified year.
+///
+/// Parameters:
+/// - [year]: The year for which the GeoJSON file is created.
+/// - [geoJsonPoints]: List of GeoJSON points collected for that year.
+/// - [outputFolder]: The output folder path where the GeoJSON file will be saved.
+Future<void> saveGeoJson(int year, List<Map<String, dynamic>> geoJsonPoints,
+    String outputFolder) async {
+  final geoJson = {
+    "type": "FeatureCollection",
+    "features": geoJsonPoints,
+  };
+
+  final geoJsonFile = File('$outputFolder/Locations_$year.geojson');
+  await geoJsonFile.writeAsString(json.encode(geoJson));
+  print('GeoJSON file created: ${geoJsonFile.path}');
 }
