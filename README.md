@@ -1,6 +1,6 @@
 # Google Takeout Location Data Processor
 
-<img width="1371" alt="image" src="https://github.com/user-attachments/assets/116b46a5-dbe2-4e4e-8ccb-1bdef8af3607">
+<img width="1379" alt="image" src="https://github.com/user-attachments/assets/249a48e9-ed80-4b03-8250-85d6895c8dc9">
 
 This project processes location data extracted via Google Takeout. It reads location records from a JSON file, calculates daily statistics based on movement data (walking, cycling, vehicle travel, etc.), and generates yearly summaries in Excel format.
 
